@@ -8,6 +8,7 @@ router.post('/signin', async (req, res) => {
   if (error) {
     return res
       .status(400)
+      
       .json({ error: 'invalid body', details: error.details })
   }
 

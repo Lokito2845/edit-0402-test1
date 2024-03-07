@@ -20,7 +20,7 @@ router.get('/:id', async (req, res) => {
   res.status(200).json({ message: 'Enquete encontrada', poll: poll })
 })
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', midle.auth, async (req, res) => {
   const pollId = req.params.id
 
   const poll = await services.getPollById(pollId)
@@ -36,7 +36,7 @@ router.delete('/:id', async (req, res) => {
   res.status(200).json({ message: 'poll deleted successfully' })
 })
 
-router.post('/poll', async (req, res) => {
+router.post('/poll', midle.auth, async (req, res) => {
   const { error, value } = schemas.createPollSchema.validate(req.body)
 
   if (error) {
@@ -71,28 +71,42 @@ router.post('/poll', async (req, res) => {
 })
 
 router.post('/:pollId/vote', midle.auth, async (req, res) => {
-  const { error, value } = schemas.voteSchema.validate(req.body)
-  if (error) {
-    return res.status(400).json({ error: 'Invalid vote details' })
+  try {
+    const { error, value } = schemas.voteSchema.validate(req.body)
+    if (error) {
+      return res.status(400).json({ error: 'Detalhes de voto inválidos' })
+    }
+
+    const pollId = req.params.pollId
+    const { option } = value
+
+    const poll = await services.getPollById(pollId)
+
+    if (!poll.options.includes(option)) {
+      return res.status(400).json({ error: 'Opção de voto inválida' })
+    }
+
+    const db = await getDB()
+    const collection = db.collection('polls')
+    await services.votepoll(value, pollId)
+
+    const updatedPoll = await services.getPollById(pollId)
+    
+    // Contagem de votos para cada opção
+    const voteCounts = updatedPoll.options.reduce((counts, opt) => {
+      counts[opt] = (updatedPoll.votes || []).filter(vote => vote.option === opt).length
+      return counts
+    }, {})
+
+    return res.status(200).json({ message: 'Voto registrado com sucesso', option: option, voteCounts: voteCounts })
+  } catch (err) {
+    console.error('Erro ao processar a solicitação de voto:', err)
+    return res.status(500).json({ error: 'Ocorreu um erro ao processar a solicitação de voto' })
   }
-
-  const pollId = req.params.pollId
-  const { option } = value
-
-  const poll = await services.getPollById(pollId)
-
-  if (!poll.options.includes(option)) {
-    return res.status(400).json({ error: 'Invalid vote option' })
-  }
-
-  const db = await getDB()
-  const collection = db.collection('polls')
-  await services.votepoll(value, pollId)
-
-  const updatedPoll = await services.getPollById(pollId)
-  res
-    .status(200)
-    .json({ message: 'Vote recorded successfully', poll: updatedPoll })
 })
+
+
+
+
 
 module.exports = router
